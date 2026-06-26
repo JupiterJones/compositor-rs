@@ -36,6 +36,8 @@ rand.workspace = true
 default = [ ]
 gpu = [ "skia-safe/gpu" ]
 angle = [ "gpu", "skia-safe/gl" ]
+x11 = [ "gpu", "skia-safe/gl", "compositor-skia-platform/x11" ]
+wayland = [ "gpu", "skia-safe/gl", "compositor-skia-platform/wayland" ]
 metal = [ "gpu", "skia-safe/metal" ]
 phlow = [ "dep:phlow", "dep:phlow-extensions", "compositor/phlow" ]
 

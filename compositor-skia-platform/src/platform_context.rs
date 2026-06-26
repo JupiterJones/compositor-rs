@@ -8,9 +8,12 @@ pub enum PlatformContext {
     D3D(crate::D3D12Context),
     #[cfg(target_os = "windows")]
     Angle(crate::AngleContext),
-    #[cfg(feature = "x11")]
+    #[cfg(all(target_os = "linux", feature = "x11"))]
     XlibGl(crate::XlibGlWindowContext),
-    #[cfg(feature = "egl")]
+    #[cfg(any(
+        all(feature = "egl", target_os = "android"),
+        all(target_os = "linux", feature = "wayland")
+    ))]
     Egl(crate::EglContext),
     #[cfg(target_os = "emscripten")]
     WebGL(crate::WebGLContext),
@@ -24,6 +27,10 @@ impl PlatformContext {
             PlatformContext::Metal(context) => Some(crate::Platform::Metal(context.platform())),
             #[cfg(target_os = "windows")]
             PlatformContext::Angle(context) => context.platform().map(crate::Platform::Angle),
+            #[cfg(all(target_os = "linux", feature = "x11"))]
+            PlatformContext::XlibGl(context) => context.platform().map(crate::Platform::OpenGL),
+            #[cfg(all(target_os = "linux", feature = "wayland"))]
+            PlatformContext::Egl(context) => context.platform().map(crate::Platform::OpenGL),
             _ => None,
         }
     }
@@ -38,9 +45,12 @@ impl PlatformContext {
             PlatformContext::Angle(context) => context
                 .with_surface(callback)
                 .unwrap_or_else(|error| error!("Failed to draw on a surface: {}", error)),
-            #[cfg(feature = "x11")]
+            #[cfg(all(target_os = "linux", feature = "x11"))]
             PlatformContext::XlibGl(context) => context.with_surface(callback),
-            #[cfg(feature = "egl")]
+            #[cfg(any(
+                all(feature = "egl", target_os = "android"),
+                all(target_os = "linux", feature = "wayland")
+            ))]
             PlatformContext::Egl(context) => context
                 .with_surface(callback)
                 .unwrap_or_else(|error| error!("Failed to draw on a surface: {}", error)),
@@ -64,11 +74,14 @@ impl PlatformContext {
             PlatformContext::Angle(context) => context
                 .resize_surface(size)
                 .unwrap_or_else(|error| error!("Failed to resize a surface: {:?}", error)),
-            #[cfg(feature = "x11")]
+            #[cfg(all(target_os = "linux", feature = "x11"))]
             PlatformContext::XlibGl(context) => context
                 .resize_surface(size)
                 .unwrap_or_else(|error| error!("Failed to resize a surface: {:?}", error)),
-            #[cfg(feature = "egl")]
+            #[cfg(any(
+                all(feature = "egl", target_os = "android"),
+                all(target_os = "linux", feature = "wayland")
+            ))]
             PlatformContext::Egl(context) => context
                 .resize_surface(size)
                 .unwrap_or_else(|error| error!("Failed to resize a surface: {:?}", error)),

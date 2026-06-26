@@ -14,9 +14,9 @@ pub use self::angle::*;
 pub use self::d3d::*;
 #[cfg(all(feature = "egl", target_os = "android"))]
 pub use self::egl_android::*;
-#[cfg(all(feature = "egl", feature = "wayland"))]
+#[cfg(all(target_os = "linux", feature = "wayland"))]
 pub use self::egl_wayland::*;
-#[cfg(feature = "x11")]
+#[cfg(all(target_os = "linux", feature = "x11"))]
 pub use self::gl_x11::*;
 #[cfg(target_os = "ios")]
 pub use self::metal_ios::*;
@@ -42,14 +42,18 @@ pub use platform_context::*;
 
 #[cfg(all(feature = "egl", target_os = "android"))]
 pub mod egl_android;
-#[cfg(feature = "wayland")]
+#[cfg(all(target_os = "linux", feature = "wayland"))]
 pub mod egl_wayland;
-#[cfg(feature = "x11")]
+#[cfg(all(target_os = "linux", feature = "x11"))]
 pub mod gl_x11;
 
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+mod opengl_platform;
 mod platform;
 #[cfg(target_os = "emscripten")]
 pub mod webgl;
 #[cfg(target_os = "emscripten")]
 pub mod webgl_utils;
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+pub use opengl_platform::*;
 pub use platform::*;

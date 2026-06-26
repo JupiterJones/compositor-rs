@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::ffi::{c_void, CString};
 use std::fmt::{Display, Formatter};
-use std::os::raw::{c_int, c_ulong};
+use std::os::raw::{self, c_int, c_ulong};
 use std::ptr::{slice_from_raw_parts, slice_from_raw_parts_mut};
 use std::sync::Mutex;
 
@@ -14,7 +14,7 @@ use x11::glx::{GLXContext, GLXFBConfig};
 use x11::xlib;
 use x11::xlib::XWindowAttributes;
 
-use crate::{PlatformCompositor, PlatformContext};
+use crate::{OpenGLPlatform, PlatformCompositor, PlatformContext};
 
 type GLenum = i32;
 type GLint = i32;
@@ -107,6 +107,20 @@ fn get_proc_address_arb(symbol: &str) -> Result<*const c_void, GlError> {
     }
 }
 
+pub unsafe extern "C" fn get_proc_address_ffi(name: *const raw::c_char) -> *const c_void {
+    if name.is_null() {
+        return std::ptr::null();
+    }
+
+    unsafe { glx::glXGetProcAddress(name as *const u8) }
+        .map(|addr| addr as *const c_void)
+        .unwrap_or_else(std::ptr::null)
+}
+
+pub unsafe extern "C" fn get_current_context_ffi() -> *const c_void {
+    unsafe { glx::glXGetCurrentContext() as *const c_void }
+}
+
 #[derive(Debug)]
 pub struct XlibGlWindowContext {
     display: *mut xlib::Display,
@@ -142,6 +156,16 @@ impl Gl {
 }
 
 impl XlibGlWindowContext {
+    pub fn platform(&self) -> Option<OpenGLPlatform> {
+        self.gl_context.as_ref().map(|gl_context| OpenGLPlatform {
+            display: self.display as *mut c_void,
+            context: gl_context.glx_context as *mut c_void,
+            surface: self.window as *mut c_void,
+            get_proc_address: get_proc_address_ffi,
+            get_current_context: get_current_context_ffi,
+        })
+    }
+
     pub fn create(
         display: *mut c_void,
         window: c_ulong,

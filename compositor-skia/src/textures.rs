@@ -1,8 +1,6 @@
 use compositor_skia_platform::Platform;
 use compositor_texture::TextureDesc;
-use skia_safe::gpu::{
-    BackendAPI, BackendRenderTarget, BackendTexture, RecordingContext,
-};
+use skia_safe::gpu::{BackendAPI, BackendRenderTarget, BackendTexture, RecordingContext};
 use skia_safe::{Size, Surface};
 
 pub fn disassemble_backend_texture(
@@ -14,7 +12,10 @@ pub fn disassemble_backend_texture(
     scale: Size,
 ) -> Option<TextureDesc> {
     match backend_texture.backend() {
-        #[cfg(target_os = "windows")]
+        #[cfg(any(
+            target_os = "windows",
+            all(target_os = "linux", any(feature = "x11", feature = "wayland"))
+        ))]
         BackendAPI::OpenGL => opengl::disassemble_opengl_backend_texture(
             platform?,
             context,
@@ -42,8 +43,10 @@ pub fn disassemble_backend_texture(
 /// If the receiver needs to keep it, they must retain it on the ObjC side.
 #[cfg(target_os = "macos")]
 mod metal {
-    use compositor_skia_platform::{MetalPlatform};
-    use compositor_texture::{encode_skia_color_type, encode_skia_protected, MetalTextureDesc, Protected};
+    use compositor_skia_platform::MetalPlatform;
+    use compositor_texture::{
+        encode_skia_color_type, encode_skia_protected, MetalTextureDesc, Protected,
+    };
     use foreign_types_shared::ForeignTypeRef;
     use skia_safe::gpu::{
         backend_formats, backend_textures, mtl, BackendTexture, RecordingContext,
@@ -69,7 +72,7 @@ mod metal {
             backend_formats::as_mtl_format(&backend_tex.backend_format())?;
 
         let image_info = render_target.image_info();
-        
+
         Some(MetalTextureDesc {
             device: platform.device.as_ptr() as _,
             queue: platform.queue.as_ptr() as _,
@@ -87,7 +90,10 @@ mod metal {
 }
 
 /// Extracts OpenGL texture internals from a Skia BackendTexture for FFI.
-#[cfg(target_os = "windows")]
+#[cfg(any(
+    target_os = "windows",
+    all(target_os = "linux", any(feature = "x11", feature = "wayland"))
+))]
 mod opengl {
     use compositor_skia_platform::{OpenGLPlatform, Platform};
     use compositor_texture::{

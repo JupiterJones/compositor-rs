@@ -14,6 +14,7 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::GetDC;
 
 use crate::angle_utils::*;
+use crate::OpenGLPlatform;
 
 pub const SAMPLE_COUNT: u32 = 1;
 
@@ -25,15 +26,6 @@ pub struct AngleContext {
     width: i32,
     height: i32,
     recreate_context_on_resize: bool,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct OpenGLPlatform {
-    pub display: *mut c_void,
-    pub context: *mut c_void,
-    pub surface: *mut c_void,
-    pub get_proc_address: unsafe extern "C" fn(name: *const raw::c_char) -> *const c_void,
-    pub get_current_context: unsafe extern "C" fn() -> *const c_void,
 }
 
 pub unsafe extern "C" fn get_proc_address_ffi(name: *const raw::c_char) -> *const c_void {

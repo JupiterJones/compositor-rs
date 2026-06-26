@@ -1,23 +1,23 @@
-use crate::{PlatformCompositor, PlatformContext};
+use crate::OpenGLPlatform;
 use khronos_egl as egl;
 use skia_safe::gpu::gl::{Enum, FramebufferInfo, Interface, UInt};
-use skia_safe::gpu::{BackendRenderTarget, ContextOptions, DirectContext, SurfaceOrigin};
+use skia_safe::gpu::{ContextOptions, DirectContext, SurfaceOrigin};
 use skia_safe::{gpu, ColorType, ISize, Surface};
 use std::error::Error;
-use std::ffi::{c_int, c_void};
+use std::ffi::c_void;
+use std::fmt::{Debug, Formatter};
+use std::os::raw;
+use std::sync::OnceLock;
 
 use wayland_sys::{egl::*, ffi_dispatch};
 
 type GLenum = i32;
 type GLint = i32;
-type GLuint = u32;
 type GLsizei = u32;
 
 // See https://chromium.googlesource.com/external/skia/gpu/+/refs/heads/master/include/GrGLDefines.h
 const GL_FRAMEBUFFER_BINDING: GLenum = 0x8CA6;
 const GL_RGBA8: GLenum = 0x8058;
-const GL_TRUE: c_int = 1;
-const GL_FALSE: c_int = 0;
 
 pub type EglInstance = egl::Instance<egl::Dynamic<libloading::Library, egl::EGL1_4>>;
 // See https://registry.khronos.org/OpenGL-Refpages/gl4/html/glGet.xhtml
@@ -25,6 +25,70 @@ type GlGetIntegerv = unsafe extern "C" fn(pname: GLenum, data: *mut GLint);
 // https://registry.khronos.org/OpenGL-Refpages/es2.0/xhtml/glClearStencil.xml
 type GlClearStencil = unsafe extern "C" fn(s: GLint);
 type GlViewport = unsafe extern "C" fn(x: GLint, y: GLint, width: GLsizei, height: GLsizei);
+type EglGetProcAddress = unsafe extern "C" fn(name: *const raw::c_char) -> *const c_void;
+type EglGetCurrentContext = unsafe extern "C" fn() -> *const c_void;
+
+struct EglSymbols {
+    _lib: libloading::Library,
+    get_proc_address: EglGetProcAddress,
+    get_current_context: EglGetCurrentContext,
+}
+
+fn egl_symbols() -> Option<&'static EglSymbols> {
+    static EGL_SYMBOLS: OnceLock<Option<EglSymbols>> = OnceLock::new();
+
+    EGL_SYMBOLS
+        .get_or_init(|| {
+            for library_name in ["libEGL.so.1", "libEGL.so"] {
+                let Ok(lib) = (unsafe { libloading::Library::new(library_name) }) else {
+                    continue;
+                };
+
+                let get_proc_address = {
+                    let Ok(symbol) =
+                        (unsafe { lib.get::<EglGetProcAddress>(b"eglGetProcAddress\0") })
+                    else {
+                        continue;
+                    };
+                    *symbol
+                };
+
+                let get_current_context = {
+                    let Ok(symbol) =
+                        (unsafe { lib.get::<EglGetCurrentContext>(b"eglGetCurrentContext\0") })
+                    else {
+                        continue;
+                    };
+                    *symbol
+                };
+
+                return Some(EglSymbols {
+                    _lib: lib,
+                    get_proc_address,
+                    get_current_context,
+                });
+            }
+
+            None
+        })
+        .as_ref()
+}
+
+pub unsafe extern "C" fn get_proc_address_ffi(name: *const raw::c_char) -> *const c_void {
+    if name.is_null() {
+        return std::ptr::null();
+    }
+
+    egl_symbols()
+        .map(|symbols| unsafe { (symbols.get_proc_address)(name) })
+        .unwrap_or_else(std::ptr::null)
+}
+
+pub unsafe extern "C" fn get_current_context_ffi() -> *const c_void {
+    egl_symbols()
+        .map(|symbols| unsafe { (symbols.get_current_context)() })
+        .unwrap_or_else(std::ptr::null)
+}
 
 pub struct EglContext {
     wayland_display: *mut c_void,
@@ -37,7 +101,26 @@ pub struct EglContext {
     height: i32,
 }
 
+impl Debug for EglContext {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EglContext")
+            .field("wayland_display", &self.wayland_display)
+            .field("wayland_surface", &self.wayland_surface)
+            .field("egl_window", &self.egl_window)
+            .field("has_egl_context", &self.egl_context.is_some())
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .finish()
+    }
+}
+
 impl EglContext {
+    pub fn platform(&self) -> Option<OpenGLPlatform> {
+        self.egl_context
+            .as_ref()
+            .map(|window_context| window_context.platform())
+    }
+
     pub fn new(
         wayland_display: *mut c_void,
         wayland_surface: *mut c_void,
@@ -54,7 +137,7 @@ impl EglContext {
 
         let egl_window = unsafe {
             ffi_dispatch!(
-                WAYLAND_EGL_HANDLE,
+                wayland_egl_handle(),
                 wl_egl_window_create,
                 wayland_surface.cast(),
                 width as _,
@@ -106,7 +189,7 @@ impl EglContext {
 
         unsafe {
             ffi_dispatch!(
-                WAYLAND_EGL_HANDLE,
+                wayland_egl_handle(),
                 wl_egl_window_resize,
                 self.egl_window,
                 self.width as _,
@@ -186,7 +269,7 @@ impl EglContext {
 
 impl Drop for EglContext {
     fn drop(&mut self) {
-        unsafe { ffi_dispatch!(WAYLAND_EGL_HANDLE, wl_egl_window_destroy, self.egl_window) };
+        unsafe { ffi_dispatch!(wayland_egl_handle(), wl_egl_window_destroy, self.egl_window) };
 
         match self.destroy_context() {
             Ok(_) => {}
@@ -200,8 +283,8 @@ impl Drop for EglContext {
 #[derive(Debug)]
 struct Gl {
     gl_get_integerv: GlGetIntegerv,
-    gl_clear_stencil: GlClearStencil,
-    gl_viewport: GlViewport,
+    _gl_clear_stencil: GlClearStencil,
+    _gl_viewport: GlViewport,
 }
 
 impl Gl {
@@ -211,11 +294,11 @@ impl Gl {
                 .get_proc_address("glGetIntegerv")
                 .map(|addr| unsafe { std::mem::transmute(addr) })
                 .ok_or_else(|| "Could not find glGetIntegerv")?,
-            gl_clear_stencil: egl
+            _gl_clear_stencil: egl
                 .get_proc_address("glClearStencil")
                 .map(|addr| unsafe { std::mem::transmute(addr) })
                 .ok_or_else(|| "Could not find glClearStencil")?,
-            gl_viewport: egl
+            _gl_viewport: egl
                 .get_proc_address("glViewport")
                 .map(|addr| unsafe { std::mem::transmute(addr) })
                 .ok_or_else(|| "Could not find glViewport")?,
@@ -227,22 +310,31 @@ struct WaylandWindowContext {
     egl_display: egl::Display,
     egl_context: egl::Context,
     egl_surface: egl::Surface,
-    backend_context: Interface,
+    _backend_context: Interface,
     direct_context: DirectContext,
     surface: Option<Surface>,
 }
 
 impl WaylandWindowContext {
+    fn platform(&self) -> OpenGLPlatform {
+        OpenGLPlatform {
+            display: self.egl_display.as_ptr() as *mut c_void,
+            context: self.egl_context.as_ptr() as *mut c_void,
+            surface: self.egl_surface.as_ptr() as *mut c_void,
+            get_proc_address: get_proc_address_ffi,
+            get_current_context: get_current_context_ffi,
+        }
+    }
+
     fn try_create(
         native_window: *mut c_void,
         native_display: *mut c_void,
         egl: &EglInstance,
     ) -> Result<Self, Box<dyn Error>> {
-        let display = egl
-            .get_display(native_display)
+        let display = unsafe { egl.get_display(native_display) }
             .ok_or_else(|| "Failed to get egl display")?;
 
-        let (major, minor) = egl.initialize(display)?;
+        let (_major, _minor) = egl.initialize(display)?;
         egl.bind_api(egl::OPENGL_ES_API)?;
 
         #[rustfmt::skip]
@@ -294,14 +386,14 @@ impl WaylandWindowContext {
             Interface::new_native().ok_or_else(|| "Failed to create native Interface")?;
 
         let context_options = ContextOptions::default();
-        let direct_context = DirectContext::new_gl(interface.clone(), &context_options)
+        let direct_context = gpu::direct_contexts::make_gl(interface.clone(), &context_options)
             .ok_or_else(|| "Failed to create direct context")?;
 
         Ok(Self {
             egl_display: display,
             egl_context: context,
             egl_surface: surface,
-            backend_context: interface,
+            _backend_context: interface,
             direct_context,
             surface: None,
         })
@@ -309,11 +401,11 @@ impl WaylandWindowContext {
 
     fn try_create_surface(
         &mut self,
-        egl: &EglInstance,
+        _egl: &EglInstance,
         gl: &Gl,
         size: (i32, i32),
     ) -> Result<(), Box<dyn Error>> {
-        if let Some(ref mut surface) = self.surface {
+        if self.surface.is_some() {
             return Ok(());
         }
 

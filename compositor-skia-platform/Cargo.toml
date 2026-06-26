@@ -67,7 +67,7 @@ features = [
 raw-window-handle-5 = ["dep:raw-window-handle-5"]
 raw-window-handle-6 = ["dep:raw-window-handle-6"]
 x11 = ["skia-safe/x11", "dep:x11"]
-wayland = [ "skia-safe/wayland", "dep:wayland-sys" ]
+wayland = [ "dep:wayland-sys", "khronos-egl", "libloading" ]
 egl = ["skia-safe/egl", "khronos-egl", "libloading" ]
 
 [dev-dependencies]
