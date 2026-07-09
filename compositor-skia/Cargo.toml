@@ -27,6 +27,9 @@ skia-safe = { version = ">=0.90", features = ["embed-icudtl"] }
 [dev-dependencies]
 winit.workspace = true
 env_logger.workspace = true
+phlow.workspace = true
+phlow-extensions.workspace = true
+phlow-server.workspace = true
 rand.workspace = true
 
 [features]

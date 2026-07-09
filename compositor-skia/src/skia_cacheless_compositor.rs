@@ -62,6 +62,13 @@ impl<'canvas> Compositor for SkiaCachelessCompositor<'canvas> {
     }
 
     fn compose_filter_below(&mut self, layer: &FilterBelowLayer) {
+        if std::env::var_os("COMPOSITOR_FILTER_BELOW_DEBUG").is_some() {
+            eprintln!(
+                "[filter-below] compose_filter_below geometry={:?} offset={:?} children={}",
+                layer.geometry(), layer.offset(), layer.layers().len()
+            );
+        }
+
         self.canvas.save();
         clip_canvas(self.canvas, layer.geometry(), Some(layer.offset()));
 

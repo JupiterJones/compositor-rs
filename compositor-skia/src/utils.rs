@@ -167,6 +167,12 @@ pub(crate) fn into_skia_image_filter(filter: &compositor::Filter) -> skia_safe::
     match filter {
         compositor::Filter::Blur(blur) => {
             let sigma = blur.radius().as_tuple_f32();
+            if std::env::var_os("COMPOSITOR_FILTER_BELOW_DEBUG").is_some() {
+                eprintln!(
+                    "[filter-below] into_skia_image_filter blur sigma=({}, {})",
+                    sigma.0, sigma.1
+                );
+            }
             skia_safe::image_filters::blur(sigma, None, None, None)
                 .expect("Failed to create Skia blur image filter")
         }

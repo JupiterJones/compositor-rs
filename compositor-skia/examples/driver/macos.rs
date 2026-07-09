@@ -2,7 +2,7 @@ use skia_safe::Canvas;
 
 pub fn run<F>(mut draw: F)
 where
-    F: 'static + FnMut(&Canvas),
+    F: 'static + FnMut(&mut Canvas),
 {
     use cocoa::{appkit::NSView, base::id as cocoa_id};
 
@@ -58,6 +58,7 @@ where
         mtl::BackendContext::new(
             device.as_ptr() as mtl::Handle,
             command_queue.as_ptr() as mtl::Handle,
+            std::ptr::null(),
         )
     };
 
@@ -90,6 +91,7 @@ where
 
                             let backend_render_target = BackendRenderTarget::new_metal(
                                 (drawable_size.width as i32, drawable_size.height as i32),
+                                1,
                                 &texture_info,
                             );
 
@@ -106,7 +108,7 @@ where
 
                         draw(surface.canvas());
 
-                        context.flush_and_submit();
+                        surface.flush_and_submit();
                         drop(surface);
 
                         let command_buffer = command_queue.new_command_buffer();
