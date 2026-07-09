@@ -66,9 +66,7 @@ impl<'canvas> Compositor for SkiaCachelessCompositor<'canvas> {
         clip_canvas(self.canvas, layer.geometry(), Some(layer.offset()));
 
         let filter = into_skia_image_filter(layer.filter());
-        let bounds = crate::into_skia_rect(&layer.geometry().bounds().translate(layer.offset()));
         let save_layer_rec = skia_safe::canvas::SaveLayerRec::default()
-            .bounds(&bounds)
             .backdrop(&filter);
 
         self.canvas.save_layer(&save_layer_rec);
