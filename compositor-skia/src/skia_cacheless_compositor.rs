@@ -72,12 +72,12 @@ impl<'canvas> Compositor for SkiaCachelessCompositor<'canvas> {
             .backdrop(&filter);
 
         self.canvas.save_layer(&save_layer_rec);
+        self.canvas.restore();
 
         for layer in layer.layers() {
             layer.compose(self);
         }
 
-        self.canvas.restore();
         self.canvas.restore();
     }
 
