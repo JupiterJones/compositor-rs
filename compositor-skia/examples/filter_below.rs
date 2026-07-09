@@ -59,7 +59,7 @@ fn draw_compositor_filter_below(canvas: &skia_safe::Canvas, rect: Rect, sigma: f
     );
 
     let mut cache = Cache::new();
-    let mut compositor = SkiaCompositor::new(canvas, &mut cache);
+    let mut compositor = SkiaCompositor::new(None, canvas, &mut cache);
     Arc::new(layer).compose(&mut compositor);
     draw_panel_fill(canvas, rect);
 }
