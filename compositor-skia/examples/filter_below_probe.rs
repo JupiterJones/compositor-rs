@@ -1,29 +1,36 @@
 use std::sync::Arc;
 
-use compositor::{Filter, FilterBelowLayer, Geometry, Layer, Point, Radius, Rectangle, RoundedRectangle};
-use compositor_skia::{Cache, SkiaCompositor};
-use skia_safe::{canvas::SaveLayerRec, image_filters, surfaces, ClipOp, Color, Color4f, IPoint, ISize, ImageInfo, Paint, RRect, Rect};
+use compositor::{Filter, FilterBelowLayer, Geometry, Layer, PictureLayer, Point, Radius, Rectangle, RoundedRectangle};
+use compositor_skia::{Cache, SkiaCompositor, SkiaPicture};
+use skia_safe::{canvas::SaveLayerRec, image_filters, surfaces, ClipOp, Color, IPoint, ISize, ImageInfo, Paint, PictureRecorder, RRect, Rect};
 
-const WIDTH: i32 = 420;
-const HEIGHT: i32 = 260;
-const PANEL_X: f32 = 90.0;
-const PANEL_Y: f32 = 70.0;
-const PANEL_W: f32 = 240.0;
-const PANEL_H: f32 = 130.0;
+const WIDTH: i32 = 520;
+const HEIGHT: i32 = 340;
+const PANEL_X: f32 = 110.0;
+const PANEL_Y: f32 = 85.0;
+const PANEL_W: f32 = 300.0;
+const PANEL_H: f32 = 170.0;
 const CORNER: f32 = 20.0;
+const STRIPE_W: f32 = 16.0;
 
-fn draw_stripes(canvas: &skia_safe::Canvas) {
+fn draw_vertical_stripes(canvas: &skia_safe::Canvas) {
     let mut paint = Paint::default();
-    let stripe_height = 20.0;
-    let mut y = 0.0;
+    let mut x = 0.0;
     let mut index = 0;
 
-    while y < HEIGHT as f32 {
+    while x < WIDTH as f32 {
         paint.set_color(if index % 2 == 0 { Color::RED } else { Color::BLUE });
-        canvas.draw_rect(Rect::from_xywh(0.0, y, WIDTH as f32, stripe_height), &paint);
-        y += stripe_height;
+        canvas.draw_rect(Rect::from_xywh(x, 0.0, STRIPE_W, HEIGHT as f32), &paint);
+        x += STRIPE_W;
         index += 1;
     }
+}
+
+fn vertical_stripes_picture() -> skia_safe::Picture {
+    let mut recorder = PictureRecorder::new();
+    let canvas = recorder.begin_recording(Rect::from_xywh(0.0, 0.0, WIDTH as f32, HEIGHT as f32), None);
+    draw_vertical_stripes(canvas);
+    recorder.finish_recording_as_picture(None).expect("picture")
 }
 
 fn draw_panel_fill(canvas: &skia_safe::Canvas, rect: Rect) {
@@ -48,7 +55,7 @@ fn draw_direct_backdrop(canvas: &skia_safe::Canvas, rect: Rect, sigma: f32, draw
     canvas.restore();
 }
 
-fn draw_compositor_backdrop(canvas: &skia_safe::Canvas, rect: Rect, sigma: f32, draw_fill: bool) {
+fn filter_below_layer(rect: Rect, sigma: f32) -> FilterBelowLayer {
     let geometry = Geometry::RoundedRectangle(RoundedRectangle::new(
         Rectangle::extent(rect.width(), rect.height()),
         Radius::new(CORNER, CORNER),
@@ -57,28 +64,45 @@ fn draw_compositor_backdrop(canvas: &skia_safe::Canvas, rect: Rect, sigma: f32, 
         Radius::new(CORNER, CORNER),
     ));
 
-    let layer = FilterBelowLayer::new(
+    FilterBelowLayer::new(
         Filter::blur(Radius::new(sigma, sigma)),
         geometry,
         Point::new_f32(rect.left, rect.top),
-    );
+    )
+}
 
+fn compose_filter_below(canvas: &skia_safe::Canvas, rect: Rect, sigma: f32, draw_fill: bool) {
     let mut cache = Cache::new();
     let mut compositor = SkiaCompositor::new(None, canvas, &mut cache);
-    Arc::new(layer).compose(&mut compositor);
+    Arc::new(filter_below_layer(rect, sigma)).compose(&mut compositor);
     if draw_fill {
         draw_panel_fill(canvas, rect);
     }
 }
 
-fn surface_pixels<F>(draw: F) -> Vec<u8>
+fn compose_picture_then_filter_below(canvas: &skia_safe::Canvas, rect: Rect, sigma: f32, draw_fill: bool, needs_cache: bool) {
+    let mut cache = Cache::new();
+    let mut compositor = SkiaCompositor::new(None, canvas, &mut cache);
+
+    let picture = Arc::new(SkiaPicture::new(vertical_stripes_picture())) as Arc<dyn compositor::Picture>;
+    Arc::new(PictureLayer::new(picture, needs_cache)).compose(&mut compositor);
+    Arc::new(filter_below_layer(rect, sigma)).compose(&mut compositor);
+
+    if draw_fill {
+        draw_panel_fill(canvas, rect);
+    }
+}
+
+fn surface_pixels<F>(draw_base: bool, draw: F) -> Vec<u8>
 where
     F: FnOnce(&skia_safe::Canvas),
 {
     let mut surface = surfaces::raster_n32_premul(ISize::new(WIDTH, HEIGHT)).unwrap();
     let canvas = surface.canvas();
     canvas.clear(Color::WHITE);
-    draw_stripes(canvas);
+    if draw_base {
+        draw_vertical_stripes(canvas);
+    }
     draw(canvas);
 
     let info = ImageInfo::new_n32_premul(ISize::new(WIDTH, HEIGHT), None);
@@ -126,46 +150,31 @@ fn summarize_line(label: &str, pixels: &[u8], points: impl Iterator<Item = (i32,
 }
 
 fn summarize(label: &str, pixels: &[u8]) {
-    let x0 = PANEL_X as i32 + 20;
-    let x1 = (PANEL_X + PANEL_W) as i32 - 20;
     let y = (PANEL_Y + PANEL_H / 2.0) as i32;
+    let x0 = PANEL_X as i32 + 10;
+    let x1 = (PANEL_X + PANEL_W) as i32 - 10;
     summarize_line(
         label,
         pixels,
         (x0..x1).map(|x| (x, y)),
-        &format!("horizontal row y={y}, x={x0}..{x1}"),
-    );
-
-    let x = (PANEL_X + PANEL_W / 2.0) as i32;
-    let y0 = PANEL_Y as i32 + 10;
-    let y1 = (PANEL_Y + PANEL_H) as i32 - 10;
-    summarize_line(
-        label,
-        pixels,
-        (y0..y1).map(|y| (x, y)),
-        &format!("vertical column x={x}, y={y0}..{y1}"),
+        &format!("horizontal row across vertical stripes y={y}, x={x0}..{x1}"),
     );
 }
 
 fn main() {
     let rect = Rect::from_xywh(PANEL_X, PANEL_Y, PANEL_W, PANEL_H);
 
-    let control = surface_pixels(|canvas| draw_panel_fill(canvas, rect));
-    summarize("control fill only", &control);
-
-    for sigma in [0.0, 0.5, 2.0, 8.0] {
-        let direct = surface_pixels(|canvas| draw_direct_backdrop(canvas, rect, sigma, false));
+    for sigma in [0.0, 2.0, 8.0, 18.0] {
+        let direct = surface_pixels(true, |canvas| draw_direct_backdrop(canvas, rect, sigma, false));
         summarize(&format!("direct backdrop no-fill sigma={sigma}"), &direct);
 
-        let direct_with_fill = surface_pixels(|canvas| draw_direct_backdrop(canvas, rect, sigma, true));
-        summarize(&format!("direct backdrop fill sigma={sigma}"), &direct_with_fill);
-    }
+        let compositor_over_direct_background = surface_pixels(true, |canvas| compose_filter_below(canvas, rect, sigma, false));
+        summarize(&format!("filter-below over directly drawn background no-fill sigma={sigma}"), &compositor_over_direct_background);
 
-    for sigma in [0.0, 0.5, 2.0, 8.0] {
-        let compositor = surface_pixels(|canvas| draw_compositor_backdrop(canvas, rect, sigma, false));
-        summarize(&format!("compositor filter-below no-fill sigma={sigma}"), &compositor);
+        let picture_uncached = surface_pixels(false, |canvas| compose_picture_then_filter_below(canvas, rect, sigma, false, false));
+        summarize(&format!("picture layer uncached then filter-below no-fill sigma={sigma}"), &picture_uncached);
 
-        let compositor_with_fill = surface_pixels(|canvas| draw_compositor_backdrop(canvas, rect, sigma, true));
-        summarize(&format!("compositor filter-below fill sigma={sigma}"), &compositor_with_fill);
+        let picture_cached = surface_pixels(false, |canvas| compose_picture_then_filter_below(canvas, rect, sigma, false, true));
+        summarize(&format!("picture layer cached then filter-below no-fill sigma={sigma}"), &picture_cached);
     }
 }
