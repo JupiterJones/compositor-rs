@@ -1,5 +1,5 @@
 use compositor::{Filter, Radius};
-use value_box::{OwnedPtr, ReturnBoxerResult};
+use value_box::OwnedPtr;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn compositor_filter_blur_new(

@@ -11,9 +11,11 @@ pub extern "C" fn compositor_filter_below_layer_new(
 ) -> OwnedPtr<Arc<dyn Layer>> {
     filter
         .with_clone_ok(|filter| {
-            geometry.with_clone_ok(|geometry| {
-                OwnedPtr::new(Arc::new(FilterBelowLayer::new(filter, geometry)) as Arc<dyn Layer>)
-            })
+            geometry
+                .with_clone_ok(|geometry| {
+                    OwnedPtr::new(Arc::new(FilterBelowLayer::new(filter, geometry)) as Arc<dyn Layer>)
+                })
+                .or_log(OwnedPtr::null())
         })
         .or_log(OwnedPtr::null())
 }
