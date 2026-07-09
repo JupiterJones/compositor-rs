@@ -1,8 +1,9 @@
-use crate::utils::{clip_canvas, draw_shadow};
+use crate::utils::{clip_canvas, draw_shadow, into_skia_image_filter};
 use crate::{as_skia_point, into_skia_matrix, to_skia_point, SkiaDrawable};
 use compositor::{
-    ClipLayer, Compositor, DynamicOffsetLayer, ExplicitLayer, Layer, LeftoverStateLayer,
-    OffsetLayer, OpacityLayer, PictureLayer, Shadow, ShadowLayer, StateCommandType,
+    ClipLayer, Compositor, DynamicOffsetLayer, ExplicitLayer, FilterBelowLayer, Layer,
+    LeftoverStateLayer, OffsetLayer, OpacityLayer, PictureLayer, Shadow, ShadowLayer,
+    StateCommandType,
     TextureLayer, TiledLayer, TransformationLayer,
 };
 use skia_safe::{Canvas, Vector};
@@ -58,6 +59,26 @@ impl<'canvas> Compositor for SkiaCachelessCompositor<'canvas> {
 
     fn compose_opacity(&mut self, layer: &OpacityLayer) {
         todo!()
+    }
+
+    fn compose_filter_below(&mut self, layer: &FilterBelowLayer) {
+        self.canvas.save();
+        clip_canvas(self.canvas, layer.geometry(), None);
+
+        let filter = into_skia_image_filter(layer.filter());
+        let bounds = crate::into_skia_rect(&layer.geometry().bounds());
+        let save_layer_rec = skia_safe::canvas::SaveLayerRec::default()
+            .bounds(&bounds)
+            .backdrop(&filter);
+
+        self.canvas.save_layer(&save_layer_rec);
+
+        for layer in layer.layers() {
+            layer.compose(self);
+        }
+
+        self.canvas.restore();
+        self.canvas.restore();
     }
 
     fn compose_shadow(&mut self, layer: &ShadowLayer) {
