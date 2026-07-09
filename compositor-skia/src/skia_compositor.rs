@@ -105,15 +105,10 @@ impl<'canvas, 'cache> Compositor for SkiaCompositor<'canvas, 'cache> {
         self.canvas.save_layer(&save_layer_rec);
         self.canvas.restore();
 
-        let offset = Vector::from(layer.offset().as_tuple_f32());
-        self.canvas.save();
-        self.canvas.translate(offset);
-
         for layer in layer.layers() {
             layer.compose(self);
         }
 
-        self.canvas.restore();
         self.canvas.restore();
     }
 
