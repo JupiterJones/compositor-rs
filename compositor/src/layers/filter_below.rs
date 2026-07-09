@@ -1,4 +1,4 @@
-use crate::{Compositor, Geometry, Layer, Radius};
+use crate::{Compositor, Geometry, Layer, Point, Radius};
 use std::any::Any;
 use std::sync::Arc;
 
@@ -7,14 +7,16 @@ pub struct FilterBelowLayer {
     layers: Vec<Arc<dyn Layer>>,
     filter: Filter,
     geometry: Geometry,
+    offset: Point,
 }
 
 impl FilterBelowLayer {
-    pub fn new(filter: Filter, geometry: Geometry) -> Self {
+    pub fn new(filter: Filter, geometry: Geometry, offset: Point) -> Self {
         Self {
             layers: vec![],
             filter,
             geometry,
+            offset,
         }
     }
 
@@ -24,6 +26,10 @@ impl FilterBelowLayer {
 
     pub fn geometry(&self) -> &Geometry {
         &self.geometry
+    }
+
+    pub fn offset(&self) -> &Point {
+        &self.offset
     }
 }
 
@@ -41,6 +47,7 @@ impl Layer for FilterBelowLayer {
             layers,
             filter: self.filter.clone(),
             geometry: self.geometry.clone(),
+            offset: self.offset.clone(),
         })
     }
 

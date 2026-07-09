@@ -96,10 +96,10 @@ impl<'canvas, 'cache> Compositor for SkiaCompositor<'canvas, 'cache> {
 
     fn compose_filter_below(&mut self, layer: &FilterBelowLayer) {
         self.canvas.save();
-        clip_canvas(self.canvas, layer.geometry(), None);
+        clip_canvas(self.canvas, layer.geometry(), Some(layer.offset()));
 
         let filter = into_skia_image_filter(layer.filter());
-        let bounds = crate::into_skia_rect(&layer.geometry().bounds());
+        let bounds = crate::into_skia_rect(&layer.geometry().bounds().translate(layer.offset()));
         let save_layer_rec = skia_safe::canvas::SaveLayerRec::default()
             .bounds(&bounds)
             .backdrop(&filter);
@@ -107,10 +107,15 @@ impl<'canvas, 'cache> Compositor for SkiaCompositor<'canvas, 'cache> {
         self.canvas.save_layer(&save_layer_rec);
         self.canvas.restore();
 
+        let offset = Vector::from(layer.offset().as_tuple_f32());
+        self.canvas.save();
+        self.canvas.translate(offset);
+
         for layer in layer.layers() {
             layer.compose(self);
         }
 
+        self.canvas.restore();
         self.canvas.restore();
     }
 
